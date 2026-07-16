@@ -1,0 +1,12 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Firebase native config (contains API keys; per-developer)
+android/app/google-services.json
+google-services.json

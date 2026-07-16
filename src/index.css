@@ -1,0 +1,97 @@
+/* Self-hosted Inter (bundled into the app) — same faces as the previous
+   Google Fonts CDN import, but renders offline. latin-ext covers ₹ (U+20B9). */
+@import "@fontsource/inter/latin-300.css";
+@import "@fontsource/inter/latin-400.css";
+@import "@fontsource/inter/latin-500.css";
+@import "@fontsource/inter/latin-600.css";
+@import "@fontsource/inter/latin-700.css";
+@import "@fontsource/inter/latin-ext-300.css";
+@import "@fontsource/inter/latin-ext-400.css";
+@import "@fontsource/inter/latin-ext-500.css";
+@import "@fontsource/inter/latin-ext-600.css";
+@import "@fontsource/inter/latin-ext-700.css";
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Inter", sans-serif;
+
+  /* GPay-like Palette */
+  --color-primary: #1A73E8;
+  --color-on-primary: #FFFFFF;
+  --color-primary-container: #D2E3FC;
+  --color-on-primary-container: #174EA6;
+
+  --color-secondary: #E8F0FE;
+  --color-on-secondary: #1967D2;
+  --color-secondary-container: #E8F0FE;
+  --color-on-secondary-container: #1967D2;
+
+  --color-tertiary: #1E8E3E;
+  --color-on-tertiary: #FFFFFF;
+  --color-tertiary-container: #CEEAD6;
+  --color-on-tertiary-container: #0D652D;
+
+  --color-error: #D93025;
+  --color-on-error: #FFFFFF;
+  --color-error-container: #FCE8E6;
+  --color-on-error-container: #A50E0E;
+
+  --color-surface: #FFFFFF;
+  --color-on-surface: #202124;
+  --color-surface-variant: #F1F3F4;
+  --color-on-surface-variant: #5F6368;
+  
+  --color-surface-container-lowest: #FFFFFF;
+  --color-surface-container-low: #F8F9FA;
+  --color-surface-container: #F1F3F4;
+  --color-surface-container-high: #E8EAED;
+  --color-surface-container-highest: #DADCE0;
+
+  --color-outline: #BDC1C6;
+  --color-outline-variant: #E8EAED;
+  
+  --color-budget-safe: #1E8E3E;
+  --color-budget-watch: #F9AB00;
+  --color-budget-warn: #D93025;
+  --color-budget-exceeded: #A50E0E;
+}
+
+@layer base {
+  body {
+    @apply bg-surface text-on-surface font-sans antialiased;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* keyboard-open is toggled by the Capacitor Keyboard listeners (native only):
+   hide the fixed bottom nav and AI FAB so they don't ride above the keyboard. */
+body.keyboard-open .app-bottom-nav,
+body.keyboard-open .app-ai-fab {
+  display: none;
+}
+
+/* Keyboard resize mode is 'none' (webview keeps its size, like mobile web).
+   Bottom-anchored sheets/bars tagged app-keyboard-avoid ride up above the
+   keyboard using the --keyboard-height var set by the Keyboard listeners. */
+.app-keyboard-avoid {
+  transition: bottom 0.2s ease, max-height 0.2s ease;
+}
+body.keyboard-open .app-keyboard-avoid {
+  bottom: var(--keyboard-height, 0px);
+  max-height: calc(100vh - var(--keyboard-height, 0px) - 24px);
+}
+
+/* The AI chat sheet is flex-anchored (justify-end), not bottom-positioned:
+   lift it with a margin and shrink it so header + input stay visible. */
+.app-chat-sheet {
+  transition: margin-bottom 0.2s ease, height 0.2s ease;
+}
+body.keyboard-open .app-chat-sheet {
+  margin-bottom: var(--keyboard-height, 0px);
+  height: calc(100vh - var(--keyboard-height, 0px) - 24px);
+}

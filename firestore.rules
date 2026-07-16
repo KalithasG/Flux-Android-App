@@ -1,0 +1,144 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net: Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidUser(data) {
+      return data.uid == request.auth.uid 
+        && data.email is string && data.email.size() <= 256
+        && (data.get('displayName', '') is string && data.get('displayName', '').size() <= 128)
+        && (data.get('photoURL', '') is string && data.get('photoURL', '').size() <= 1024)
+        && (data.get('savingsCategoryIds', []) is list)
+        && (data.get('savingsPlan', {}) is map);
+    }
+
+    function isValidTransaction(data) {
+      return data.authorUid == request.auth.uid
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 256
+        && data.amount is number && data.amount >= 0
+        && data.category is string && data.category.size() <= 128
+        && data.date is string && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.type in ['income', 'expense']
+        && (data.get('paymentMethod', '') is string && data.get('paymentMethod', '').size() <= 128)
+        && (data.get('note', '') is string && data.get('note', '').size() <= 1024)
+        && (data.get('createdAt', request.time) == request.time);
+    }
+
+    function isValidBudget(data) {
+      return data.authorUid == request.auth.uid
+        && data.month is string && data.month.matches('^\\d{4}-\\d{2}$')
+        && data.category is string && data.category.size() <= 128
+        && data.amount is number && data.amount >= 0
+        && (data.get('createdAt', request.time) == request.time);
+    }
+
+    function isValidCategory(data) {
+      return data.authorUid == request.auth.uid
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 128
+        && data.icon is string && data.icon.size() <= 10
+        && data.type in ['income', 'expense']
+        && (data.get('color', '') is string && data.get('color', '').size() <= 128)
+        && (data.get('hex', '') is string && data.get('hex', '').size() <= 10)
+        && (data.get('createdAt', request.time) == request.time);
+    }
+
+    // --- Collection Matches ---
+
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      
+      allow create: if isOwner(userId) 
+        && isValidUser(incoming())
+        && incoming().keys().hasAll(['uid', 'email'])
+        && incoming().keys().size() <= 10;
+
+      allow update: if isOwner(userId)
+        && isValidUser(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'savingsCategoryIds', 'savingsPlan', 'email', 'uid']);
+
+      match /transactions/{transactionId} {
+        allow get: if isOwner(userId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId)
+          && isValidId(transactionId)
+          && isValidTransaction(incoming())
+          && incoming().keys().hasAll(['authorUid', 'title', 'amount', 'category', 'date', 'type', 'createdAt'])
+          && incoming().keys().size() <= 15;
+
+        allow update: if isOwner(userId)
+          && isValidTransaction(incoming())
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['title', 'amount', 'category', 'date', 'paymentMethod', 'note', 'type'])
+          );
+
+        allow delete: if isOwner(userId);
+      }
+
+      match /budgets/{budgetId} {
+        allow get: if isOwner(userId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId)
+          && isValidId(budgetId)
+          && isValidBudget(incoming())
+          && incoming().keys().hasAll(['authorUid', 'month', 'category', 'amount', 'createdAt'])
+          && incoming().keys().size() <= 10;
+
+        allow update: if isOwner(userId)
+          && isValidBudget(incoming())
+          && incoming().diff(existing()).affectedKeys().hasOnly(['amount', 'category', 'month']);
+
+        allow delete: if isOwner(userId);
+      }
+
+      match /categories/{categoryId} {
+        allow get: if isOwner(userId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId)
+          && isValidId(categoryId)
+          && isValidCategory(incoming())
+          && incoming().keys().hasAll(['authorUid', 'name', 'icon', 'type', 'createdAt'])
+          && incoming().keys().size() <= 10;
+
+        allow update: if isOwner(userId)
+          && isValidCategory(incoming())
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'icon', 'color', 'hex', 'type']);
+
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // Global Test Connection
+    match /test/connection {
+      allow get: if true;
+    }
+  }
+}
