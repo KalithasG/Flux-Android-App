@@ -75,23 +75,7 @@ body.keyboard-open .app-ai-fab {
   display: none;
 }
 
-/* Keyboard resize mode is 'none' (webview keeps its size, like mobile web).
-   Bottom-anchored sheets/bars tagged app-keyboard-avoid ride up above the
-   keyboard using the --keyboard-height var set by the Keyboard listeners. */
-.app-keyboard-avoid {
-  transition: bottom 0.2s ease, max-height 0.2s ease;
-}
-body.keyboard-open .app-keyboard-avoid {
-  bottom: var(--keyboard-height, 0px);
-  max-height: calc(100vh - var(--keyboard-height, 0px) - 24px);
-}
-
-/* The AI chat sheet is flex-anchored (justify-end), not bottom-positioned:
-   lift it with a margin and shrink it so header + input stay visible. */
-.app-chat-sheet {
-  transition: margin-bottom 0.2s ease, height 0.2s ease;
-}
-body.keyboard-open .app-chat-sheet {
-  margin-bottom: var(--keyboard-height, 0px);
-  height: calc(100vh - var(--keyboard-height, 0px) - 24px);
-}
+/* Note on keyboards: Capacitor 8's core SystemBars handler already resizes
+   the WebView above the keyboard (independent of the Keyboard plugin), so
+   bottom-anchored sheets sit above the keyboard naturally. Keyboard resize is
+   'none' so the plugin doesn't apply a second, conflicting adjustment. */

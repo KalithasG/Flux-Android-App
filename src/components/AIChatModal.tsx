@@ -161,7 +161,7 @@ DO NOT return any other text, markdown formatting, or codeblocks. Just the raw J
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 25, stiffness: 200 }}
-            className="app-chat-sheet relative bg-surface-container-lowest w-full h-[85vh] rounded-t-[32px] sm:max-w-md sm:mx-auto shadow-2xl flex flex-col overflow-hidden"
+            className="relative bg-surface-container-lowest w-full h-[85vh] rounded-t-[32px] sm:max-w-md sm:mx-auto shadow-2xl flex flex-col overflow-hidden"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 bg-primary text-on-primary shadow-sm z-10">

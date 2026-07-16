@@ -1277,7 +1277,7 @@ const TransactionList = ({ data, onDelete, onAdd, onUpdate, showAdd: externalSho
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="app-keyboard-avoid fixed bottom-0 left-0 right-0 bg-surface-container-lowest rounded-t-[32px] p-6 pb-12 z-[60] shadow-2xl max-h-[85vh] overflow-y-auto"
+              className="fixed bottom-0 left-0 right-0 bg-surface-container-lowest rounded-t-[32px] p-6 pb-12 z-[60] shadow-2xl max-h-[85vh] overflow-y-auto"
             >
               <div className="w-12 h-1.5 bg-outline-variant/50 rounded-full mx-auto mb-6" />
               
