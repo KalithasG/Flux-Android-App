@@ -89,6 +89,10 @@ export const AuthScreen = () => {
       setError('Please enter your name');
       return;
     }
+    if (isSignUp && password.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
 
     try {
       setLoading(true);

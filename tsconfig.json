@@ -23,5 +23,5 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "exclude": ["node_modules", "dist", "android"]
+  "exclude": ["node_modules", "dist", "android", "whatsapp-bot"]
 }

@@ -31,6 +31,17 @@ export interface CustomCategory {
   createdAt: string;
 }
 
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName?: string;
+  photoURL?: string;
+  savingsCategoryIds?: string[];
+  savingsPlan?: Record<string, Record<string, number>>;
+  currency?: string; // ISO 4217 code, defaults to INR
+  whatsappNumber?: string; // E.164 digits, mirrored by the WhatsApp bot backend
+}
+
 export interface AppState {
   transactions: Transaction[];
   budgets: Budget[];

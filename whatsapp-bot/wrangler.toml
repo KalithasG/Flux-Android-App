@@ -1,0 +1,14 @@
+name = "flux-whatsapp-bot"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+
+# Non-secret config. Secrets are NEVER put here — set them with:
+#   wrangler secret put WHATSAPP_TOKEN
+#   wrangler secret put PHONE_NUMBER_ID
+#   wrangler secret put META_APP_SECRET
+#   wrangler secret put WEBHOOK_VERIFY_TOKEN
+#   wrangler secret put GEMINI_API_KEY
+#   wrangler secret put FIREBASE_SERVICE_ACCOUNT   (paste the full JSON on one line)
+# For local `wrangler dev`, put the same keys in .dev.vars (gitignored).
+[vars]
+FIREBASE_PROJECT_ID = "flux-v1-6a563"

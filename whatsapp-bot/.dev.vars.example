@@ -1,0 +1,8 @@
+# Copy to .dev.vars (gitignored) for local `wrangler dev`.
+# In production set each of these with `wrangler secret put <NAME>`.
+WHATSAPP_TOKEN=EAAG...your-cloud-api-token
+PHONE_NUMBER_ID=123456789012345
+META_APP_SECRET=your-meta-app-secret
+WEBHOOK_VERIFY_TOKEN=any-random-string-you-choose
+GEMINI_API_KEY=AIza...your-gemini-key
+FIREBASE_SERVICE_ACCOUNT={"type":"service_account","project_id":"flux-v1-6a563","private_key":"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n","client_email":"firebase-adminsdk-...@flux-v1-6a563.iam.gserviceaccount.com",...}

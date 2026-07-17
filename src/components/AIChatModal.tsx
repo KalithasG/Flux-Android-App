@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Send, Bot, Check, XCircle } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { generateContentWithFallback } from "../lib/gemini";
-import { formatCurrency, getCurrentDate, CATEGORIES } from '../lib/utils';
+import { formatCurrency, getCurrentDate, CATEGORIES, currencySymbol } from '../lib/utils';
 import { CustomCategory } from '../types';
 
 interface Message {
@@ -25,18 +25,23 @@ export const AIChatModal = ({
   onAddTransaction: (data: any) => void;
   customCategories: CustomCategory[];
 }) => {
+  const greeting = () => `Hi! Send me a message like "Spent ${currencySymbol()}60 on tea via UPI" and I will log it for you.`;
   const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      text: 'Hi! Send me a message like "Spent ₹60 on tea via UPI" and I will log it for you.'
-    }
+    { id: '1', role: 'assistant', text: greeting() }
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const allCategories = [...CATEGORIES, ...customCategories];
+
+  // The initial greeting is built at mount, which can precede the profile
+  // snapshot that sets the active currency — rebuild it on open.
+  useEffect(() => {
+    if (isOpen) {
+      setMessages(prev => prev.map(m => m.id === '1' ? { ...m, text: greeting() } : m));
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -252,7 +257,7 @@ DO NOT return any other text, markdown formatting, or codeblocks. Just the raw J
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                  placeholder="E.g. Spent ₹150 on coffee via UPI"
+                  placeholder={`E.g. Spent ${currencySymbol()}150 on coffee via UPI`}
                   className="flex-1 bg-surface-container border border-outline-variant/50 rounded-full h-12 px-5 text-sm outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/50 transition-all font-medium text-on-surface"
                 />
                 <button 

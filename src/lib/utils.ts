@@ -5,10 +5,48 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export interface Currency {
+  code: string;
+  symbol: string;
+  locale: string;
+  name: string;
+}
+
+export const CURRENCIES: Currency[] = [
+  { code: 'INR', symbol: '₹', locale: 'en-IN', name: 'Indian Rupee' },
+  { code: 'USD', symbol: '$', locale: 'en-US', name: 'US Dollar' },
+  { code: 'EUR', symbol: '€', locale: 'de-DE', name: 'Euro' },
+  { code: 'GBP', symbol: '£', locale: 'en-GB', name: 'British Pound' },
+  { code: 'JPY', symbol: '¥', locale: 'ja-JP', name: 'Japanese Yen' },
+  { code: 'CNY', symbol: '¥', locale: 'zh-CN', name: 'Chinese Yuan' },
+  { code: 'AUD', symbol: 'A$', locale: 'en-AU', name: 'Australian Dollar' },
+  { code: 'CAD', symbol: 'C$', locale: 'en-CA', name: 'Canadian Dollar' },
+  { code: 'SGD', symbol: 'S$', locale: 'en-SG', name: 'Singapore Dollar' },
+  { code: 'AED', symbol: 'د.إ', locale: 'ar-AE', name: 'UAE Dirham' },
+  { code: 'SAR', symbol: '﷼', locale: 'ar-SA', name: 'Saudi Riyal' },
+  { code: 'CHF', symbol: 'CHF', locale: 'de-CH', name: 'Swiss Franc' },
+  { code: 'MYR', symbol: 'RM', locale: 'ms-MY', name: 'Malaysian Ringgit' },
+  { code: 'LKR', symbol: 'Rs', locale: 'si-LK', name: 'Sri Lankan Rupee' },
+  { code: 'BDT', symbol: '৳', locale: 'bn-BD', name: 'Bangladeshi Taka' },
+];
+
+// Active currency is module-level so formatCurrency's ~58 call sites don't
+// need a prop/context; it is set from the user's profile before renders
+// (store.ts users-doc snapshot) and changing it triggers a state update there.
+let activeCurrency: Currency = CURRENCIES[0];
+
+export const setActiveCurrency = (code: string | undefined) => {
+  activeCurrency = CURRENCIES.find(c => c.code === code) || CURRENCIES[0];
+};
+
+export const getActiveCurrency = (): Currency => activeCurrency;
+
+export const currencySymbol = (): string => activeCurrency.symbol;
+
 export const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-IN', {
+  return new Intl.NumberFormat(activeCurrency.locale, {
     style: 'currency',
-    currency: 'INR',
+    currency: activeCurrency.code,
     maximumFractionDigits: 0,
   }).format(amount);
 };

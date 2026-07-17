@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Transaction, Budget, AppState, CustomCategory } from './types';
 import { db, auth } from './firebase';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, serverTimestamp, query, orderBy, Timestamp } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
+import { setActiveCurrency } from './lib/utils';
 
 export enum OperationType {
   CREATE = 'create',
@@ -17,39 +18,17 @@ export interface FirestoreErrorInfo {
   error: string;
   operationType: OperationType;
   path: string | null;
-  authInfo: {
-    userId: string | undefined;
-    email: string | null | undefined;
-    emailVerified: boolean | undefined;
-    isAnonymous: boolean | undefined;
-    tenantId: string | null | undefined;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
-  }
+  userId: string | undefined;
 }
 
+// Deliberately excludes email/provider details: error logs end up in logcat
+// on device and must not carry PII.
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
-    },
     operationType,
-    path
+    path,
+    userId: auth.currentUser?.uid
   }
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
@@ -74,6 +53,39 @@ export function useFluxData() {
     }
   };
 
+  const updateCurrency = async (code: string) => {
+    if (!userId || !auth.currentUser) return;
+    try {
+      await setDoc(doc(db, 'users', userId), {
+        uid: userId,
+        email: auth.currentUser.email || '',
+        currency: code
+      }, { merge: true });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `users/${userId}`);
+    }
+  };
+
+  // Writes a short-lived 6-digit code the user sends to the WhatsApp bot as
+  // "LINK <code>"; the bot's backend resolves it to this uid. Rules allow
+  // create only (no read/update), so a code collision surfaces as a
+  // permission error — retry once with a fresh code.
+  const createWaLinkCode = async (): Promise<string | undefined> => {
+    if (!userId) return;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const code = String(Math.floor(100000 + Math.random() * 900000));
+      try {
+        await setDoc(doc(db, 'waLinkCodes', code), {
+          uid: userId,
+          expiresAt: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000)
+        });
+        return code;
+      } catch (error) {
+        if (attempt === 1) handleFirestoreError(error, OperationType.CREATE, `waLinkCodes/${code}`);
+      }
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUserId(user ? user.uid : null);
@@ -88,7 +100,11 @@ export function useFluxData() {
     const userPath = `users/${userId}`;
     const unsubUser = onSnapshot(doc(db, 'users', userId), (docSnap) => {
       if (docSnap.exists()) {
-        setUserProfile(docSnap.data());
+        const profile = docSnap.data();
+        // Set before the state update so the rerender it triggers already
+        // formats with the user's currency.
+        setActiveCurrency(profile.currency);
+        setUserProfile(profile);
       }
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, userPath);
@@ -353,5 +369,5 @@ export function useFluxData() {
     }
   };
 
-  return { data, addTransaction, deleteTransaction, updateTransaction, updateBudget, deleteBudget, addCustomCategory, deleteCustomCategory, updateSavingsCategories, updateSavingsPlan, updateYearlySavingsPlan, updateFullSavingsPlan, userId, isAuthReady, userProfile };
+  return { data, addTransaction, deleteTransaction, updateTransaction, updateBudget, deleteBudget, addCustomCategory, deleteCustomCategory, updateSavingsCategories, updateSavingsPlan, updateYearlySavingsPlan, updateFullSavingsPlan, updateCurrency, createWaLinkCode, userId, isAuthReady, userProfile };
 }

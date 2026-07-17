@@ -1,0 +1,16 @@
+{
+  "name": "flux-whatsapp-bot",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260710.1",
+    "typescript": "~5.8.2",
+    "wrangler": "^4.24.0"
+  }
+}

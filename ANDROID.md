@@ -77,8 +77,12 @@ Devices without any Google account get a friendly "add a Google account" error
 Launcher icons and splash screens are generated from `assets/icon*.png` / `assets/splash*.png`:
 
 ```powershell
-npx capacitor-assets generate --android --iconBackgroundColor '#FFFFFF' --splashBackgroundColor '#FFFFFF'
+npx @capacitor/assets generate --android --iconBackgroundColor '#FFFFFF' --splashBackgroundColor '#FFFFFF'
 ```
+
+`@capacitor/assets` is intentionally **not** a devDependency (its bundled `tar` has
+unfixable audit findings); the generated icons are committed, and `npx` fetches the
+tool on demand if they ever need regenerating.
 
 ## Emulator testing on this machine
 
@@ -97,3 +101,31 @@ certificate → CA certificate) — debug builds trust it via the network securi
 Physical devices on a normal network need none of this.
 
 To undo the proxy: `adb shell settings put global http_proxy :0`
+
+## Security checklist (Firebase / Google Cloud Console)
+
+Code-side hardening is done (locked-down `firestore.rules`, no secrets in source,
+minimal `FileProvider` paths, PII-free error logs, 8-char minimum passwords). The
+following can only be flipped in the consoles — do them once before sharing the
+APK beyond the family:
+
+1. **Publish the current `firestore.rules`** — Firebase Console → Firestore →
+   Rules → paste the repo version → Publish. The repo copy is the source of
+   truth; the console does not sync from git.
+2. **App Check (Play Integrity)** — Firebase Console → App Check → register the
+   Android app with the Play Integrity provider, then set Firestore + Auth
+   enforcement to "Enforced". Blocks non-app clients even if the API key leaks
+   (the key in `google-services.json` is an identifier, not a secret — App Check
+   is what makes that safe).
+3. **Restrict the API keys** — Google Cloud Console → APIs & Services →
+   Credentials:
+   - the **Gemini** key: restrict to the *Generative Language API* only;
+   - the **Firebase Android** key: restrict to Android apps (package name +
+     SHA-1) and to the Firebase APIs it actually uses (Identity Toolkit,
+     Firestore, App Check).
+4. **Auth hardening** — Firebase Console → Authentication → Settings: enable
+   **email enumeration protection**, and set a **password policy** (min length ≥ 8
+   to match the client-side check).
+5. **WhatsApp bot secrets** — live only in Cloudflare (`wrangler secret`) and
+   Meta's dashboard; nothing to configure in Firebase beyond generating the
+   service-account key (see `whatsapp-bot/README.md`).

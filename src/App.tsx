@@ -38,7 +38,7 @@ import {
   Bot
 } from 'lucide-react';
 import { useFluxData, handleFirestoreError, OperationType } from './store';
-import { cn, formatCurrency, CATEGORIES, getCurrentMonth, formatMonth, getCurrentDate, computeUnderBudgetStreak } from './lib/utils';
+import { cn, formatCurrency, CATEGORIES, getCurrentMonth, formatMonth, getCurrentDate, computeUnderBudgetStreak, CURRENCIES, getActiveCurrency, currencySymbol } from './lib/utils';
 import { GoogleGenAI } from "@google/genai";
 import { AIAnalyzer } from './components/AIAnalyzer';
 import { CustomCategory } from './types';
@@ -1317,7 +1317,7 @@ const TransactionList = ({ data, onDelete, onAdd, onUpdate, showAdd: externalSho
                 </div>
 
                 <div className="text-center space-y-2 mb-2">
-                  <label className="text-[10px] font-medium text-on-surface-variant uppercase tracking-wider">Amount (INR)</label>
+                  <label className="text-[10px] font-medium text-on-surface-variant uppercase tracking-wider">Amount ({getActiveCurrency().code})</label>
                   <input 
                     type="number" 
                     placeholder="0"
@@ -1882,7 +1882,7 @@ const BudgetScreen = ({ data, onUpdateBudget, onDeleteBudget, customCategories, 
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-on-surface-variant ml-1">Amount</label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm font-medium">₹</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm font-medium">{currencySymbol()}</span>
                     <input 
                       type="number" 
                       min="0"
@@ -1946,7 +1946,7 @@ const BudgetScreen = ({ data, onUpdateBudget, onDeleteBudget, customCategories, 
                         {isEditingThis ? (
                           <div className="flex items-center gap-1.5">
                             <div className="relative w-20">
-                              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[10px] font-medium">₹</span>
+                              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[10px] font-medium">{currencySymbol()}</span>
                               <input 
                                 type="number" 
                                 min="0"
@@ -2634,9 +2634,9 @@ const SavingsScreen = ({ data, userProfile, onUpdateSavingsCategories, onAddTran
                       <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">{cat.name}</label>
                     </div>
                     <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant font-medium">₹</span>
-                      <input 
-                        type="number" 
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant font-medium">{currencySymbol()}</span>
+                      <input
+                        type="number"
                         placeholder="0"
                         value={planAmounts[planMonth]?.[cat.id] || ''}
                         onChange={(e) => {
@@ -2702,9 +2702,9 @@ const SavingsScreen = ({ data, userProfile, onUpdateSavingsCategories, onAddTran
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider ml-1">Amount</label>
                   <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant font-medium">₹</span>
-                    <input 
-                      type="number" 
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant font-medium">{currencySymbol()}</span>
+                    <input
+                      type="number"
                       placeholder="0"
                       value={histAmount}
                       onChange={(e) => setHistAmount(e.target.value)}
@@ -3486,7 +3486,10 @@ const ReportScreen = ({ data, userProfile, selectedMonth, onMonthChange: setSele
         }
       });
 
-      const formatPDFCurrency = (amount: number) => `Rs. ${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+      // jsPDF's built-in fonts can't render ₹/₩/etc glyphs, so use the ISO
+      // code with the currency's own digit grouping.
+      const activeCur = getActiveCurrency();
+      const formatPDFCurrency = (amount: number) => `${activeCur.code} ${amount.toLocaleString(activeCur.locale, { maximumFractionDigits: 2 })}`;
 
       // Title
       doc.setFontSize(22);
@@ -3811,14 +3814,16 @@ const ReportScreen = ({ data, userProfile, selectedMonth, onMonthChange: setSele
   );
 };
 
-const SettingsModal = ({ isOpen, onClose, customCategories, onAddCategory, onDeleteCategory, userProfile, onUpdateSavingsCategories }: { 
-  isOpen: boolean, 
-  onClose: () => void, 
-  customCategories: CustomCategory[], 
-  onAddCategory: (cat: any) => void, 
-  onDeleteCategory: (id: string) => void, 
+const SettingsModal = ({ isOpen, onClose, customCategories, onAddCategory, onDeleteCategory, userProfile, onUpdateSavingsCategories, onUpdateCurrency, onCreateWaLinkCode }: {
+  isOpen: boolean,
+  onClose: () => void,
+  customCategories: CustomCategory[],
+  onAddCategory: (cat: any) => void,
+  onDeleteCategory: (id: string) => void,
   userProfile?: any,
-  onUpdateSavingsCategories: (ids: string[]) => void
+  onUpdateSavingsCategories: (ids: string[]) => void,
+  onUpdateCurrency: (code: string) => void,
+  onCreateWaLinkCode: () => Promise<string | undefined>
 }) => {
   const [newCatName, setNewCatName] = useState('');
   const [newCatIcon, setNewCatIcon] = useState('📦');
@@ -3826,6 +3831,25 @@ const SettingsModal = ({ isOpen, onClose, customCategories, onAddCategory, onDel
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState(auth.currentUser?.displayName || '');
   const [isSavingName, setIsSavingName] = useState(false);
+  const [isLinkingWa, setIsLinkingWa] = useState(false);
+  const waBotNumber = import.meta.env.VITE_WA_BOT_NUMBER as string | undefined;
+
+  const handleLinkWhatsApp = async () => {
+    if (!waBotNumber || isLinkingWa) return;
+    setIsLinkingWa(true);
+    try {
+      const code = await onCreateWaLinkCode();
+      if (code) {
+        // Capacitor routes external URLs to the system browser, which hands
+        // wa.me off to the WhatsApp app with the LINK message prefilled.
+        window.open(`https://wa.me/${waBotNumber}?text=${encodeURIComponent(`LINK ${code}`)}`, '_blank');
+      }
+    } catch {
+      // Store already logged the Firestore error.
+    } finally {
+      setIsLinkingWa(false);
+    }
+  };
   
   const savingsCategoryIds = userProfile?.savingsCategoryIds || [];
   const allCategories = Array.from(new Map([...CATEGORIES, ...customCategories].map(c => [c.id, c])).values());
@@ -3952,12 +3976,42 @@ const SettingsModal = ({ isOpen, onClose, customCategories, onAddCategory, onDel
           <section className="space-y-4">
             <h3 className="text-sm font-semibold text-primary uppercase tracking-wider">Preferences</h3>
             <div className="p-4 bg-surface-container-low rounded-2xl border border-outline-variant/30 space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="font-medium text-on-surface text-sm">Currency</p>
                   <p className="text-xs text-on-surface-variant">Default currency for transactions</p>
                 </div>
-                <span className="text-sm font-medium bg-surface-container px-3 py-1 rounded-lg">INR (₹)</span>
+                <select
+                  value={userProfile?.currency || 'INR'}
+                  onChange={(e) => onUpdateCurrency(e.target.value)}
+                  className="text-sm font-medium bg-surface-container px-3 py-1.5 rounded-lg outline-none border border-transparent focus:border-primary max-w-[140px]"
+                >
+                  {CURRENCIES.map(c => (
+                    <option key={c.code} value={c.code}>{c.code} ({c.symbol})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="h-px bg-outline-variant/30 w-full" />
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-medium text-on-surface text-sm">WhatsApp</p>
+                  <p className="text-xs text-on-surface-variant">
+                    {userProfile?.whatsappNumber
+                      ? `Linked to +${userProfile.whatsappNumber} — send "unlink" in chat to remove`
+                      : 'Log expenses and check budgets by chatting with the Flux bot'}
+                  </p>
+                </div>
+                {userProfile?.whatsappNumber ? (
+                  <span className="text-xs font-semibold text-primary bg-primary/10 px-3 py-1.5 rounded-lg shrink-0">Linked ✓</span>
+                ) : (
+                  <button
+                    onClick={handleLinkWhatsApp}
+                    disabled={!waBotNumber || isLinkingWa}
+                    className="text-sm font-medium bg-primary text-on-primary px-4 py-1.5 rounded-lg disabled:opacity-50 shrink-0 active:scale-95 transition-all"
+                  >
+                    {isLinkingWa ? 'Linking…' : 'Link'}
+                  </button>
+                )}
               </div>
               <div className="h-px bg-outline-variant/30 w-full" />
               <div className="flex items-center justify-between opacity-50">
@@ -4080,7 +4134,7 @@ const MainApp = () => {
   const [showAddTransaction, setShowAddTransaction] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showAIChat, setShowAIChat] = useState(false);
-  const { data, addTransaction, deleteTransaction, updateTransaction, updateBudget, deleteBudget, addCustomCategory, deleteCustomCategory, updateSavingsCategories, updateSavingsPlan, updateYearlySavingsPlan, updateFullSavingsPlan, userId, isAuthReady, userProfile } = useFluxData();
+  const { data, addTransaction, deleteTransaction, updateTransaction, updateBudget, deleteBudget, addCustomCategory, deleteCustomCategory, updateSavingsCategories, updateSavingsPlan, updateYearlySavingsPlan, updateFullSavingsPlan, updateCurrency, createWaLinkCode, userId, isAuthReady, userProfile } = useFluxData();
 
   // Android hardware back button: close the topmost open modal first,
   // then return to the dashboard tab, then exit the app.
@@ -4155,6 +4209,8 @@ const MainApp = () => {
         onDeleteCategory={deleteCustomCategory}
         userProfile={userProfile}
         onUpdateSavingsCategories={updateSavingsCategories}
+        onUpdateCurrency={updateCurrency}
+        onCreateWaLinkCode={createWaLinkCode}
       />
     </div>
   );

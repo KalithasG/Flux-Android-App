@@ -10,3 +10,11 @@ coverage/
 # Firebase native config (contains API keys; per-developer)
 android/app/google-services.json
 google-services.json
+
+# Local reference notes (not part of the app)
+hooked-principles-*.md
+
+# Cloudflare worker local state / service account keys
+whatsapp-bot/.wrangler/
+whatsapp-bot/*service-account*.json
+.dev.vars

@@ -30,18 +30,19 @@ service cloud.firestore {
     // --- Validation Blueprints ---
 
     function isValidUser(data) {
-      return data.uid == request.auth.uid 
+      return data.uid == request.auth.uid
         && data.email is string && data.email.size() <= 256
         && (data.get('displayName', '') is string && data.get('displayName', '').size() <= 128)
         && (data.get('photoURL', '') is string && data.get('photoURL', '').size() <= 1024)
         && (data.get('savingsCategoryIds', []) is list)
-        && (data.get('savingsPlan', {}) is map);
+        && (data.get('savingsPlan', {}) is map)
+        && (data.get('currency', 'INR') is string && data.get('currency', 'INR').size() <= 8);
     }
 
     function isValidTransaction(data) {
       return data.authorUid == request.auth.uid
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 256
-        && data.amount is number && data.amount >= 0
+        && data.amount is number && data.amount >= 0 && data.amount <= 100000000000
         && data.category is string && data.category.size() <= 128
         && data.date is string && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$')
         && data.type in ['income', 'expense']
@@ -54,7 +55,7 @@ service cloud.firestore {
       return data.authorUid == request.auth.uid
         && data.month is string && data.month.matches('^\\d{4}-\\d{2}$')
         && data.category is string && data.category.size() <= 128
-        && data.amount is number && data.amount >= 0
+        && data.amount is number && data.amount >= 0 && data.amount <= 100000000000
         && (data.get('createdAt', request.time) == request.time);
     }
 
@@ -80,7 +81,7 @@ service cloud.firestore {
 
       allow update: if isOwner(userId)
         && isValidUser(incoming())
-        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'savingsCategoryIds', 'savingsPlan', 'email', 'uid']);
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'savingsCategoryIds', 'savingsPlan', 'email', 'uid', 'currency']);
 
       match /transactions/{transactionId} {
         allow get: if isOwner(userId);
@@ -136,9 +137,20 @@ service cloud.firestore {
       }
     }
 
-    // Global Test Connection
-    match /test/connection {
-      allow get: if true;
+    // WhatsApp linking: the app writes a short-lived code the user then sends
+    // to the bot; only the backend (Admin access, bypasses rules) reads codes
+    // and maintains the waLinks phone->uid mapping. Clients can only create
+    // their own code documents.
+    match /waLinkCodes/{code} {
+      allow create: if isSignedIn()
+        && incoming().uid == request.auth.uid
+        && incoming().expiresAt is timestamp
+        && incoming().keys().hasOnly(['uid', 'expiresAt'])
+        && code.size() == 6 && code.matches('^[0-9]+$');
+      allow read, update, delete: if false;
     }
+
+    // waLinks (phone -> uid) is backend-only: no client access at all,
+    // covered by the default deny.
   }
 }
