@@ -3840,9 +3840,15 @@ const SettingsModal = ({ isOpen, onClose, customCategories, onAddCategory, onDel
     try {
       const code = await onCreateWaLinkCode();
       if (code) {
-        // Capacitor routes external URLs to the system browser, which hands
-        // wa.me off to the WhatsApp app with the LINK message prefilled.
-        window.open(`https://wa.me/${waBotNumber}?text=${encodeURIComponent(`LINK ${code}`)}`, '_blank');
+        const waUrl = `https://wa.me/${waBotNumber}?text=${encodeURIComponent(`LINK ${code}`)}`;
+        if (Capacitor.isNativePlatform()) {
+          // window.open is a no-op in the Capacitor WebView; assigning
+          // location.href routes the external URL through the bridge, which
+          // fires an ACTION_VIEW intent (WhatsApp/browser) and keeps the app.
+          window.location.href = waUrl;
+        } else {
+          window.open(waUrl, '_blank');
+        }
       }
     } catch {
       // Store already logged the Firestore error.
