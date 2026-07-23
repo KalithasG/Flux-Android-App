@@ -96,6 +96,14 @@ async function handleWebhook(raw: string, env: Env): Promise<void> {
   }
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
+      // Surface async delivery failures (e.g. 131047 outside the 24h service
+      // window) — the send API returns 200 and the real error only arrives
+      // here, so without this log a dropped reply is invisible.
+      for (const st of change.value?.statuses ?? []) {
+        if (st.status === 'failed' || st.errors) {
+          console.error('delivery status', st.status, st.recipient_id, JSON.stringify(st.errors ?? []).slice(0, 300));
+        }
+      }
       for (const msg of change.value?.messages ?? []) {
         if (msg.type !== 'text' || !msg.from || !msg.text?.body) continue;
         try {
@@ -114,7 +122,12 @@ async function handleWebhook(raw: string, env: Env): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function handleMessage(phone: string, text: string, env: Env): Promise<void> {
-  const overLimit = await bumpRateLimit(env, phone);
+  // Rate-limit bump and link lookup are independent — run them in parallel
+  // to keep reply latency down.
+  const [overLimit, link] = await Promise.all([
+    bumpRateLimit(env, phone),
+    fsGet(env, `waLinks/${phone}`),
+  ]);
   if (overLimit === 'warn') {
     await sendText(env, phone, `You've hit the limit of ${RATE_LIMIT_PER_HOUR} messages per hour. Please try again later.`);
     return;
@@ -130,7 +143,6 @@ async function handleMessage(phone: string, text: string, env: Env): Promise<voi
     return;
   }
 
-  const link = await fsGet(env, `waLinks/${phone}`);
   if (!link?.uid) {
     await sendText(env, phone,
       'This number is not linked to a Flux account yet.\n\n' +
@@ -180,7 +192,7 @@ async function handleMessage(phone: string, text: string, env: Env): Promise<voi
 
 function helpText(): string {
   return (
-    '*Flux WhatsApp bot* 🤖\n\n' +
+    '*Flux Chat* 🤖\n\n' +
     'Just tell me what you spent or earned:\n' +
     '_"Spent 60 on tea via UPI"_\n' +
     '_"Got salary 50000"_\n\n' +
@@ -296,7 +308,9 @@ async function handleBudgetSet(env: Env, phone: string, uid: string, rawCategory
 }
 
 async function handleFreeform(env: Env, phone: string, uid: string, text: string): Promise<void> {
-  const parsed = await geminiParse(env, text);
+  // Fetch the currency symbol while Gemini parses — both are needed for the
+  // success reply and neither depends on the other.
+  const [parsed, sym] = await Promise.all([geminiParse(env, text), currencySymbol(env, uid)]);
   if (!parsed || !(parsed.amount > 0) || parsed.amount > 1e11 || !parsed.title) {
     await sendText(env, phone,
       `I couldn't read a transaction from that. Try: _"Spent 60 on tea via UPI"_ — or send *help* for commands.`);
@@ -315,7 +329,6 @@ async function handleFreeform(env: Env, phone: string, uid: string, text: string
   if (parsed.paymentMethod) tx.paymentMethod = String(parsed.paymentMethod).slice(0, 128);
   if (parsed.note) tx.note = String(parsed.note).slice(0, 1024);
   await fsCreate(env, `users/${uid}/transactions`, tx);
-  const sym = await currencySymbol(env, uid);
   await sendText(env, phone,
     `✅ Logged ${sym}${fmt(parsed.amount)} ${type === 'income' ? 'income' : ''} for *${tx.title}* (${tx.category}).`);
 }

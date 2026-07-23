@@ -1,7 +1,9 @@
-# Flux WhatsApp Bot
+# Flux Chat (WhatsApp bot)
 
 A Cloudflare Worker that lets Flux users log expenses/income and check
-budgets & analytics from WhatsApp. Runs entirely on free tiers:
+budgets & analytics from WhatsApp — branded **Flux Chat** in the app and
+chat replies. (The Worker itself stays named `flux-whatsapp-bot`; renaming
+it would change the URL and break the Meta webhook config.) Runs entirely on free tiers:
 
 - **Meta WhatsApp Cloud API, dev mode** — free test number, up to 5 recipient
   numbers, no business verification. User-initiated conversations (and every

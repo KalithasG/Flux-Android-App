@@ -4000,11 +4000,11 @@ const SettingsModal = ({ isOpen, onClose, customCategories, onAddCategory, onDel
               <div className="h-px bg-outline-variant/30 w-full" />
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="font-medium text-on-surface text-sm">WhatsApp</p>
+                  <p className="font-medium text-on-surface text-sm">Flux Chat on WhatsApp</p>
                   <p className="text-xs text-on-surface-variant">
                     {userProfile?.whatsappNumber
                       ? `Linked to +${userProfile.whatsappNumber} — send "unlink" in chat to remove`
-                      : 'Log expenses and check budgets by chatting with the Flux bot'}
+                      : 'Log expenses and check budgets by chatting with Flux Chat'}
                   </p>
                 </div>
                 {userProfile?.whatsappNumber ? (
@@ -4142,6 +4142,23 @@ const MainApp = () => {
   const [showAIChat, setShowAIChat] = useState(false);
   const { data, addTransaction, deleteTransaction, updateTransaction, updateBudget, deleteBudget, addCustomCategory, deleteCustomCategory, updateSavingsCategories, updateSavingsPlan, updateYearlySavingsPlan, updateFullSavingsPlan, updateCurrency, createWaLinkCode, userId, isAuthReady, userProfile } = useFluxData();
 
+  // Toast when WhatsApp linking completes: the link happens outside the app
+  // (in the WhatsApp chat), so the only in-app signal is whatsappNumber
+  // appearing on the profile. Skip the initial profile load.
+  const [waToast, setWaToast] = useState<string | null>(null);
+  const prevWaRef = React.useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!userProfile) return;
+    const current = userProfile.whatsappNumber || '';
+    const prev = prevWaRef.current;
+    prevWaRef.current = current;
+    if (prev !== undefined && prev === '' && current) {
+      setWaToast('WhatsApp linked ✅');
+      const t = setTimeout(() => setWaToast(null), 3500);
+      return () => clearTimeout(t);
+    }
+  }, [userProfile]);
+
   // Android hardware back button: close the topmost open modal first,
   // then return to the dashboard tab, then exit the app.
   const backStateRef = React.useRef({ activeTab, showAIChat, showSettings, showAddTransaction });
@@ -4191,7 +4208,20 @@ const MainApp = () => {
       </main>
 
       <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
-      
+
+      <AnimatePresence>
+        {waToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 20, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: 20, x: '-50%' }}
+            className="fixed bottom-24 left-1/2 z-[200] bg-on-surface text-surface text-sm font-medium px-5 py-2.5 rounded-full shadow-lg whitespace-nowrap"
+          >
+            {waToast}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Floating AI Chat Button */}
       <button
         onClick={() => setShowAIChat(true)}
