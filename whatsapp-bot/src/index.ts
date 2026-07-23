@@ -20,7 +20,11 @@ export interface Env {
 }
 
 const RATE_LIMIT_PER_HOUR = 30;
-const GEMINI_MODEL = 'gemini-3.1-flash-lite';
+
+// Ordered by measured free-tier latency (flash-lite ~1.4s, 2.5-flash ~0.7s,
+// 3.5-flash often congested); pro models have no free quota at all.
+const GEMINI_MODELS = ['gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-3.5-flash'];
+const GEMINI_RETRYABLE = /RESOURCE_EXHAUSTED|UNAVAILABLE|overloaded|high demand/i;
 
 const CATEGORIES = [
   'Food', 'Transport', 'Health', 'Entertainment', 'Shopping', 'Utilities',
@@ -37,9 +41,43 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   LKR: 'Rs', BDT: '৳',
 };
 
+const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+  'Access-Control-Max-Age': '86400',
+};
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    // Authenticated Gemini proxy for the app: keeps the API key out of every
+    // client bundle (web + APK). CORS is open because auth is a Bearer token,
+    // not cookies — nothing ambient to steal cross-origin.
+    if (url.pathname === '/ai') {
+      if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+      if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
+
+      const authz = request.headers.get('authorization') ?? '';
+      const idToken = authz.startsWith('Bearer ') ? authz.slice(7) : '';
+      const uid = idToken ? await verifyFirebaseIdToken(env, idToken) : null;
+      if (!uid) return jsonResponse({ error: 'Unauthorized' }, 401);
+
+      let body: any;
+      try {
+        body = await request.json();
+      } catch {
+        return jsonResponse({ error: 'Invalid JSON body' }, 400);
+      }
+      const prompt = typeof body?.prompt === 'string' ? body.prompt : '';
+      if (!prompt || prompt.length > 20000) return jsonResponse({ error: 'Invalid prompt' }, 400);
+
+      const text = await geminiGenerate(env, prompt, !!body.json);
+      if (text === null) return jsonResponse({ error: 'AI temporarily unavailable' }, 502);
+      return jsonResponse({ text }, 200);
+    }
+
     if (url.pathname !== '/webhook') return new Response('Not found', { status: 404 });
 
     if (request.method === 'GET') {
@@ -67,6 +105,67 @@ export default {
     return new Response('Method not allowed', { status: 405 });
   },
 };
+
+function jsonResponse(payload: unknown, status: number): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Firebase ID token verification (for /ai)
+// ---------------------------------------------------------------------------
+
+let jwksCache: { keys: any[]; fetched: number } | null = null;
+
+async function getFirebaseJwks(): Promise<any[]> {
+  if (jwksCache && Date.now() - jwksCache.fetched < 3600_000) return jwksCache.keys;
+  const res = await fetch('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com');
+  if (!res.ok) throw new Error(`JWKS fetch failed: ${res.status}`);
+  const data: any = await res.json();
+  jwksCache = { keys: data.keys ?? [], fetched: Date.now() };
+  return jwksCache.keys;
+}
+
+/** Returns the uid for a valid Firebase ID token of this project, else null. */
+async function verifyFirebaseIdToken(env: Env, token: string): Promise<string | null> {
+  try {
+    const [h, p, s] = token.split('.');
+    if (!h || !p || !s) return null;
+    const header = JSON.parse(new TextDecoder().decode(b64urlToBytes(h)));
+    const payload = JSON.parse(new TextDecoder().decode(b64urlToBytes(p)));
+
+    const project = env.FIREBASE_PROJECT_ID;
+    const now = Math.floor(Date.now() / 1000);
+    if (header.alg !== 'RS256') return null;
+    if (payload.aud !== project) return null;
+    if (payload.iss !== `https://securetoken.google.com/${project}`) return null;
+    if (!(payload.exp > now)) return null;
+    if (typeof payload.sub !== 'string' || !payload.sub) return null;
+
+    const jwk = (await getFirebaseJwks()).find((k) => k.kid === header.kid);
+    if (!jwk) return null;
+    const key = await crypto.subtle.importKey(
+      'jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify'],
+    );
+    const ok = await crypto.subtle.verify(
+      'RSASSA-PKCS1-v1_5', key, b64urlToBytes(s), new TextEncoder().encode(`${h}.${p}`),
+    );
+    return ok ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+function b64urlToBytes(s: string): Uint8Array {
+  let b64 = s.replace(/-/g, '+').replace(/_/g, '/');
+  while (b64.length % 4) b64 += '=';
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // Webhook plumbing
@@ -351,26 +450,8 @@ async function geminiParse(env: Env, text: string): Promise<ParsedTx | null> {
     `"paymentMethod": "UPI"|"Card"|"Cash"|null, "note": string|null}.\n` +
     `Pick category from: ${CATEGORIES.join(', ')}. Use "Other" if unsure.\n` +
     `If the message is not a transaction at all, reply with {"error": "not a transaction"}.`;
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${env.GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          thinkingConfig: { thinkingBudget: 0 },
-        },
-      }),
-    },
-  );
-  if (!res.ok) {
-    console.error('Gemini error', res.status, await res.text());
-    return null;
-  }
-  const data: any = await res.json();
-  const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  const raw = await geminiGenerate(env, prompt, true);
+  if (!raw) return null;
   try {
     const parsed = JSON.parse(raw.replace(/^```(?:json)?|```$/g, '').trim());
     if (parsed.error) return null;
@@ -378,6 +459,42 @@ async function geminiParse(env: Env, text: string): Promise<ParsedTx | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Text generation with the model-fallback chain: try each model in order,
+ * retrying a model once without thinkingConfig if it rejects the config
+ * (400), and moving to the next model on quota/load errors (429/503).
+ * Returns the text, or null when every option failed.
+ */
+async function geminiGenerate(env: Env, prompt: string, json: boolean): Promise<string | null> {
+  for (const model of GEMINI_MODELS) {
+    for (const withThinkingOff of [true, false]) {
+      const generationConfig: Record<string, unknown> = {};
+      if (withThinkingOff) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+      if (json) generationConfig.responseMimeType = 'application/json';
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig }),
+        },
+      );
+      if (res.ok) {
+        const data: any = await res.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        return typeof text === 'string' ? text : null;
+      }
+      const errBody = await res.text();
+      if (res.status === 400 && withThinkingOff) continue; // config rejected → bare retry
+      if (res.status === 429 || res.status === 503 || GEMINI_RETRYABLE.test(errBody)) break; // next model
+      console.error('Gemini error', res.status, errBody.slice(0, 300));
+      return null;
+    }
+  }
+  console.error('Gemini: all models failed (quota/load)');
+  return null;
 }
 
 // ---------------------------------------------------------------------------

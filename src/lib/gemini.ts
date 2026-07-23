@@ -1,48 +1,32 @@
-import type { GoogleGenAI } from '@google/genai';
+import { auth } from '../firebase';
 
-// Ordered by measured latency on free-tier keys (2026-07): flash-lite ~1.4s,
-// 2.5-flash ~0.7s, 3.5-flash often congested (503s / 15s+ responses) so it is
-// the last resort. All three have free-tier quota (pro models have none).
-const MODELS = ['gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-3.5-flash'];
+// All Gemini calls go through the Flux Chat Worker (`POST /ai`), authenticated
+// with the caller's Firebase ID token. The API key lives only as a Worker
+// secret — it must never appear in a client bundle (web or APK), which is why
+// this module deliberately has no direct dependency on the Gemini API.
+// The Worker owns the model-fallback chain and thinking/JSON config.
 
-const RETRYABLE = /\b(429|503)\b|RESOURCE_EXHAUSTED|UNAVAILABLE|overloaded|high demand/i;
-const CONFIG_REJECTED = /INVALID_ARGUMENT|\b400\b/i;
+const PROXY_URL = (import.meta.env.VITE_AI_PROXY_URL as string | undefined)?.replace(/\/$/, '');
 
 interface GenerateOptions {
-  /** Ask the API for a JSON response body (skips markdown fences). */
+  /** Ask for a JSON response body (skips markdown fences). */
   json?: boolean;
 }
 
-export async function generateContentWithFallback(ai: GoogleGenAI, prompt: string, opts: GenerateOptions = {}) {
-  // Disable "thinking": these are short extraction/summary tasks and thinking
-  // multiplies latency on flash models.
-  const config = {
-    thinkingConfig: { thinkingBudget: 0 },
-    ...(opts.json ? { responseMimeType: 'application/json' } : {})
-  };
+export async function generateContent(prompt: string, opts: GenerateOptions = {}): Promise<{ text: string }> {
+  if (!PROXY_URL) throw new Error('AI is not configured (VITE_AI_PROXY_URL missing).');
+  const user = auth.currentUser;
+  if (!user) throw new Error('Sign in to use AI features.');
 
-  let lastErr: unknown;
-  for (const model of MODELS) {
-    try {
-      return await ai.models.generateContent({ model, contents: prompt, config });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (CONFIG_REJECTED.test(msg)) {
-        // Model rejected the config (e.g. thinking budget unsupported): retry
-        // the same model without it before falling through.
-        try {
-          return await ai.models.generateContent({ model, contents: prompt });
-        } catch (retryErr) {
-          const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
-          if (!RETRYABLE.test(retryMsg)) throw retryErr;
-          lastErr = retryErr;
-          continue;
-        }
-      }
-      if (!RETRYABLE.test(msg)) throw err;
-      console.warn(`Gemini model ${model} unavailable (quota/load), trying next fallback`);
-      lastErr = err;
-    }
-  }
-  throw lastErr;
+  const idToken = await user.getIdToken();
+  const res = await fetch(`${PROXY_URL}/ai`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ prompt, json: !!opts.json }),
+  });
+  if (!res.ok) throw new Error(`AI request failed (${res.status})`);
+  return await res.json();
 }

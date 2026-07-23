@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Send, Bot, Check, XCircle } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
-import { generateContentWithFallback } from "../lib/gemini";
+import { generateContent } from "../lib/gemini";
 import { formatCurrency, getCurrentDate, CATEGORIES, currencySymbol } from '../lib/utils';
 import { CustomCategory } from '../types';
 
@@ -63,10 +62,6 @@ export const AIChatModal = ({
     setIsTyping(true);
 
     try {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) throw new Error("Gemini API key is missing");
-      const ai = new GoogleGenAI({ apiKey });
-
       const catList = allCategories.map(c => `{ id: "${c.id}", name: "${c.name}" }`).join(", ");
 
       const prompt = `
@@ -89,7 +84,7 @@ If the user is NOT logging a transaction, return ONLY:
 
 DO NOT return any other text, markdown formatting, or codeblocks. Just the raw JSON format.
 `;
-      const response = await generateContentWithFallback(ai, prompt, { json: true });
+      const response = await generateContent(prompt, { json: true });
 
       let responseText = response.text || "";
       responseText = responseText.replace(/```json/gi, '').replace(/```/gi, '').trim();

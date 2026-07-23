@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Bot, Sparkles, AlertTriangle } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
-import { generateContentWithFallback } from "../lib/gemini";
+import { generateContent } from "../lib/gemini";
 import { formatCurrency } from '../lib/utils';
 import ReactMarkdown from 'react-markdown';
 
@@ -14,12 +13,6 @@ export const AIAnalyzer = ({ data, selectedMonth, allCategories }: { data: any, 
     setIsAnalyzing(true);
     setError(null);
     try {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-         throw new Error("Gemini API key is missing");
-      }
-      const ai = new GoogleGenAI({ apiKey });
-
       const monthExpenses = data.transactions.filter((t: any) => t.type === 'expense' && t.date.startsWith(selectedMonth));
       const monthIncome = data.transactions.filter((t: any) => t.type === 'income' && t.date.startsWith(selectedMonth));
       
@@ -45,7 +38,7 @@ export const AIAnalyzer = ({ data, selectedMonth, allCategories }: { data: any, 
       
       Please provide a brief, insightful financial analysis. Give suggestions for savings, alert on high spendings if any, and offer simple actionable advice. Format the output clearly. (Keep it concise enough for mobile viewing).`;
 
-      const response = await generateContentWithFallback(ai, prompt);
+      const response = await generateContent(prompt);
 
       setAnalysis(response.text || "No analysis generated.");
     } catch (err: any) {

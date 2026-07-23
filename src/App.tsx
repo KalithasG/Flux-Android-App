@@ -39,7 +39,6 @@ import {
 } from 'lucide-react';
 import { useFluxData, handleFirestoreError, OperationType } from './store';
 import { cn, formatCurrency, CATEGORIES, getCurrentMonth, formatMonth, getCurrentDate, computeUnderBudgetStreak, CURRENCIES, getActiveCurrency, currencySymbol } from './lib/utils';
-import { GoogleGenAI } from "@google/genai";
 import { AIAnalyzer } from './components/AIAnalyzer';
 import { CustomCategory } from './types';
 import { AIChatModal } from './components/AIChatModal';
